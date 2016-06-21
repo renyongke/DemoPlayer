@@ -2,7 +2,7 @@
 //
 
 #pragma once
-
+#include "d3d_render_interface.h"
 
 // CDemoPlayerDlg 对话框
 class CDemoPlayerDlg : public CDialog
@@ -10,6 +10,13 @@ class CDemoPlayerDlg : public CDialog
 // 构造
 public:
 	CDemoPlayerDlg(CWnd* pParent = NULL);	// 标准构造函数
+	CStatic m_view[4];
+	Cd3d_render_interface m_render[4];
+	HANDLE udpRecvThreadHandle;
+
+	static UINT WINAPI udpRecvThread(PVOID pM);
+	
+	
 
 // 对话框数据
 	enum { IDD = IDD_DEMOPLAYER_DIALOG };
@@ -28,4 +35,6 @@ protected:
 	afx_msg void OnPaint();
 	afx_msg HCURSOR OnQueryDragIcon();
 	DECLARE_MESSAGE_MAP()
+public:
+	afx_msg void OnMouseMove(UINT nFlags, CPoint point);
 };

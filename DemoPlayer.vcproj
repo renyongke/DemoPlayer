@@ -22,7 +22,7 @@
 			IntermediateDirectory="$(ConfigurationName)"
 			ConfigurationType="1"
 			UseOfMFC="2"
-			CharacterSet="1"
+			CharacterSet="2"
 			>
 			<Tool
 				Name="VCPreBuildEventTool"
@@ -45,6 +45,7 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="0"
+				AdditionalIncludeDirectories="./DemoPlayer/ffmpeg/include"
 				PreprocessorDefinitions="WIN32;_WINDOWS;_DEBUG"
 				MinimalRebuild="true"
 				BasicRuntimeChecks="3"
@@ -67,7 +68,9 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				LinkIncremental="2"
+				AdditionalDependencies="d3d_render_interface.lib"
+				LinkIncremental="1"
+				AdditionalLibraryDirectories="./DemoPlayer/ffmpeg/lib"
 				GenerateDebugInformation="true"
 				SubSystem="2"
 				TargetMachine="1"
@@ -220,6 +223,14 @@
 			UniqueIdentifier="{93995380-89BD-4b04-88EB-625FBE52EBFB}"
 			>
 			<File
+				RelativePath=".\YUV\Arcus_YUV.h"
+				>
+			</File>
+			<File
+				RelativePath=".\d3d_render_interface.h"
+				>
+			</File>
+			<File
 				RelativePath=".\DemoPlayer.h"
 				>
 			</File>
@@ -228,7 +239,23 @@
 				>
 			</File>
 			<File
+				RelativePath=".\YUV\Inferno_YUV.h"
+				>
+			</File>
+			<File
+				RelativePath=".\YUV\iron_YUV.h"
+				>
+			</File>
+			<File
+				RelativePath=".\YUV\Memoriam_YUV.h"
+				>
+			</File>
+			<File
 				RelativePath=".\Resource.h"
+				>
+			</File>
+			<File
+				RelativePath=".\YUV\RHot_YUV.h"
 				>
 			</File>
 			<File
@@ -236,7 +263,15 @@
 				>
 			</File>
 			<File
+				RelativePath=".\YUV\sunset_YUV.h"
+				>
+			</File>
+			<File
 				RelativePath=".\targetver.h"
+				>
+			</File>
+			<File
+				RelativePath=".\YUV\Whot_YUV.h"
 				>
 			</File>
 		</Filter>
