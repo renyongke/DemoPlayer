@@ -37,4 +37,8 @@ protected:
 	DECLARE_MESSAGE_MAP()
 public:
 	afx_msg void OnMouseMove(UINT nFlags, CPoint point);
+	afx_msg void OnBnClickedButtonB1cal();
+	afx_msg void OnBnClickedButtonB1calof30();
+	afx_msg void OnBnClickedButtonB2calof80();
+	afx_msg void OnBnClickedButtonfindbp();
 };

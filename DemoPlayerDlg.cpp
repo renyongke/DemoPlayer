@@ -72,7 +72,31 @@ unsigned char nowmousecolor[10];
 int Hist_max,Hist_min,Hist_sum_5low,Hist_sum_5hign=0;
 unsigned char videoRecvBuf[4][1024*200];
 unsigned char yuvBuf[4][1920*1080*3/2];
-unsigned char yuvBuf1[Image_Width*Image_Height];
+unsigned char yuvBuf1[Image_Width*Image_Height*3/2];
+
+float  average[10];
+float  aver_screen=0;
+unsigned char ave_cnt=0;
+
+unsigned long Buffer_Space[Image_Width*Image_Height]={0,};
+
+unsigned char Bp_Space[Image_Width*Image_Height]={0,};
+unsigned short X_Space[Image_Width*Image_Height]={0,};
+unsigned short B_Space[Image_Width*Image_Height]={0,};
+unsigned short B2_Space[Image_Width*Image_Height]={0,};
+unsigned short K_Space[Image_Width*Image_Height]={0,};
+unsigned short B_aver=0;
+unsigned short B_aver_30=0;
+unsigned short B2_aver=0;
+
+unsigned char B1_Cal = 0;
+unsigned char B2_Cal = 0;
+unsigned char B1_Cal_30 = 0;
+unsigned char Find_Bp_en = 0;
+
+unsigned char Cal_cnt = 0;
+unsigned char tmpcolor[768];
+
 
 // 用于应用程序“关于”菜单项的 CAboutDlg 对话框
 
@@ -107,6 +131,57 @@ END_MESSAGE_MAP()
 
 // CDemoPlayerDlg 对话框
 
+void Data_Space_Init(void)
+{
+	FILE *fp_Bp,*fp_B,*fp_K,*fp_color= NULL;
+	char Image_B[Image_Width*Image_Height*2]={0,};
+	char Image_K[Image_Width*Image_Height*2+2]={0,};
+	unsigned double B_aver_buf=0;
+	unsigned int i;
+
+	fp_B = fopen("B1.dat","rb");
+	if (fp_B != NULL)
+	{
+		fread(Image_B,1,Image_Width*Image_Height*2,fp_B);
+		for (i = 0;i<Image_Width*Image_Height;i++)
+		{
+			B_Space[i] = (unsigned short)((unsigned char)Image_B[2*i] + (Image_B[2*i+1]<<8));
+			B_aver_buf = B_aver_buf + B_Space[i];
+		}
+		B_aver = B_aver_buf/(Image_Width*Image_Height);
+		B_aver_30 = B_aver;
+	}
+	else
+	{
+		memset (B_Space,0x00,Image_Width*Image_Height);
+	}
+
+	fp_K = fopen("K.dat","rb");
+	if (fp_K != NULL)
+	{
+		fread(Image_K,1,Image_Width*Image_Height*2+2,fp_K);
+		for (i = 0;i<Image_Width*Image_Height;i++)
+		{
+			K_Space[i] = (unsigned short)((unsigned char)Image_K[2*i] + (Image_K[2*i + 1]<<8));
+		}
+		B2_aver = (unsigned short)((unsigned char)Image_K[2*i] + (Image_K[2*i + 1]<<8));
+
+	}
+	else
+	{
+		memset (K_Space,0x0400,Image_Width*Image_Height);
+	}
+
+	fp_Bp = fopen("Bp.dat","rb");
+	if (fp_Bp != NULL)
+		fread((char*)Bp_Space,1,Image_Width*Image_Height,fp_Bp);
+	else
+		memset (Bp_Space,0,Image_Width*Image_Height);
+
+	fp_color = fopen("YUV-Memoriam.raw","rb");
+	fread((char*)tmpcolor,1,768,fp_color);
+
+}
 
 
 
@@ -128,6 +203,10 @@ BEGIN_MESSAGE_MAP(CDemoPlayerDlg, CDialog)
 	ON_WM_QUERYDRAGICON()
 	//}}AFX_MSG_MAP
 	ON_WM_MOUSEMOVE()
+	ON_BN_CLICKED(IDC_BUTTON_B1Cal, &CDemoPlayerDlg::OnBnClickedButtonB1cal)
+	ON_BN_CLICKED(IDC_BUTTON_B1Calof30, &CDemoPlayerDlg::OnBnClickedButtonB1calof30)
+	ON_BN_CLICKED(IDC_BUTTON_B2calof80, &CDemoPlayerDlg::OnBnClickedButtonB2calof80)
+	ON_BN_CLICKED(IDC_BUTTON_findBP, &CDemoPlayerDlg::OnBnClickedButtonfindbp)
 END_MESSAGE_MAP()
 
 
@@ -161,7 +240,7 @@ BOOL CDemoPlayerDlg::OnInitDialog()
 	SetIcon(m_hIcon, FALSE);		// 设置小图标
 
 	// TODO: 在此添加额外的初始化代码
-
+	Data_Space_Init();
 	memset(recv_buf,0,sizeof(recv_buf));
 
 	if(WSAStartup(MAKEWORD(2,2),&wsaData)!=0)
@@ -247,21 +326,181 @@ void CDemoPlayerDlg::OnPaint()
 
 }
 
+void Bp_replace(unsigned short *Image_in,unsigned char *Bp,unsigned short *Image_out)
+{
+	bool Bp_data = 0;
+	unsigned char data_buf;
+	int i;
+
+	for (i=0;i<Image_Width*Image_Height;i++)
+	{
+		Bp_data = *Bp++;
+		if (Bp_data)
+		{
+			*Image_out++ = *(Image_in -1);
+			*Image_in++;
+		}
+		else
+			*Image_out++ = *Image_in++;
+	}
+}
+void filter(unsigned short *Image_now,unsigned short *Image_last,unsigned int Value_Th)
+{
+	int Data_now,Data_last;
+
+	for(int i = 0; i < Image_Width*Image_Height;i++)
+	{
+		Data_now = *Image_now;
+		Data_last = *Image_last;
+		if (abs(Data_now - Data_last) < Value_Th)
+		{
+			if (Data_now > Data_last)
+				*Image_now = Data_last + 2;
+			else if (Data_now < Data_last)
+				*Image_now = Data_last - 2;
+		}
+		*Image_last ++  = *Image_now++;
+
+	}
+}
+void smooth (unsigned short *Image_in,unsigned short *Image_out)
+{
+	unsigned short Data1,Data2,Data3,Data4,Data5,Data6,Data7,Data8,Data9;
+	int i,k;
+
+	for (i = 0;i <Image_Height;i++)
+	{
+		for (k=0;k<Image_Width;k++)
+		{
+			Data1 = *(Image_in-Image_Width-1);
+			Data2 = *(Image_in-Image_Width);
+			Data3 = *(Image_in-Image_Width+1);
+			Data4 = *(Image_in-1);
+			Data5 = *Image_in;
+			Data6 = *(Image_in+1);
+			Data7 = *(Image_in+Image_Width-1);
+			Data8 = *(Image_in+Image_Width);
+			Data9 = *(Image_in+Image_Width+1);
+			*Image_in++;
+			if (k==0)
+			{
+				if (i==0)
+					*Image_out++ =unsigned short(( Data5 +Data6 + Data8+Data9)/4);
+				else if (i==255)
+					*Image_out++ =unsigned short(( Data5 +Data6 + Data2+Data3)/4);
+				else
+					*Image_out++ =unsigned short((Data2+ Data5 +Data6 +Data9+ Data8+Data3)/6);
+			}
+			else if (k==319)
+			{
+				if (i==0)
+					*Image_out++ =unsigned short((Data6+ Data5 +Data4 +Data9+ Data8+Data7)/4);
+				else if (i==255)
+					*Image_out++ =unsigned short((Data6+ Data5 +Data4 +Data3+ Data2+Data1)/4);
+				else
+					*Image_out++ =unsigned short((Data2+ Data1 +Data5 +Data4+ Data8+Data7)/6);
+			}
+			else
+			{
+				if (i==0)
+					*Image_out++ =unsigned short(( Data5 +Data4 + Data8+Data7)/4);
+				else if (i==255)
+					*Image_out++ =unsigned short(( Data5 +Data4 + Data2+Data1)/4);
+				else
+					*Image_out++ =unsigned short((Data1+Data2+Data3+Data4+Data5 +Data6 +Data7+ Data8+Data9)/9);
+			}
+		}
+	}
+}
+void twopointcal(unsigned short *Image_in,unsigned short *Image_B,unsigned short *Image_K,unsigned short B_aver,unsigned short *Image_out)
+{
+	unsigned short Data_X,Data_B,Data_K=0;
+	signed short data_buf = 0;
+	int i;
+
+	for (i = 0;i<Image_Width*Image_Height;i++)
+	{
+		Data_X = *Image_in++;
+		Data_B = *Image_B++;
+		Data_K = *Image_K++;
+		data_buf = (signed short)((((Data_K * (signed short)(Data_X - Data_B))>>12) + B_aver));
+		if (data_buf > 16383)
+			*Image_out = 16383;
+		else if (data_buf < 0)
+			*Image_out = 0;
+		else
+			*Image_out++ = data_buf;
+	}
+}
+void DDE (unsigned short *Image_in,unsigned short *Image_out)
+{
+	unsigned short Data1,Data2,Data3,Data4,Data5,Data6,Data7,Data8,Data9;
+	int i,k;
+
+
+	for (i = 0;i <Image_Height;i++)
+	{
+		for (k=0;k<Image_Width;k++)
+		{
+			Data1 = *(Image_in-Image_Width-1);
+			Data2 = *(Image_in-Image_Width);
+			Data3 = *(Image_in-Image_Width+1);
+			Data4 = *(Image_in-1);
+			Data5 = *Image_in;
+			Data6 = *(Image_in+1);
+			Data7 = *(Image_in+Image_Width-1);
+			Data8 = *(Image_in+Image_Width);
+			Data9 = *(Image_in+Image_Width+1);
+			*Image_in++;
+			if (k==0)
+			{
+				if (i==0)
+					*Image_out++ =unsigned short(Data5 + (Data6 + Data8 + Data9 - 3 * Data5)/6);
+				else if (i==255)
+					*Image_out++ =unsigned short( Data5 +(Data6 + Data2 + Data3- 3 * Data5)/6);
+				else
+					*Image_out++ =unsigned short(Data5 +(Data6 + Data9 + Data8 + Data2 + Data3 - 5 * Data5)/10);
+			}
+			else if (k==319)
+			{
+				if (i==0)
+					*Image_out++ =unsigned short(Data5 +(Data4 + Data8 + Data7 - 3 * Data5)/6);
+				else if (i==255)
+					*Image_out++ =unsigned short(Data5 +(Data4 + Data2 + Data1 - 3 * Data5)/6);
+				else
+					*Image_out++ =unsigned short(Data5 +(Data2 + Data1 + Data4 + Data8 + Data7 - 5 * Data5)/10);
+			}
+			else
+			{
+				if (i==0)
+					*Image_out++ =unsigned short(Data5 +(Data6 + Data4  + Data9 + Data8 + Data7 - 5 * Data5)/10);
+				else if (i==255)
+					*Image_out++ =unsigned short(Data5 +(Data6 + Data4 +Data3 + Data2 + Data1 - 5 * Data5)/10);
+				else
+					*Image_out++ =unsigned short(Data5 +(Data1 + Data2 + Data3 + Data4 + Data6 + Data7 + Data8 + Data9 - 8 * Data5)/16);
+
+			}
+		}
+	}
+}
 void autobc(unsigned short *Image_in, unsigned char *Image_out)
 {
-	//int Hist_max,Hist_min,Hist_sum_5low,Hist_sum_5hign=0;
-	int Hist_sum,Hist_sum_buf=0;
-	int data_buf = 0;
+	int Hist_sum=0;
+	double Hist_sum_buf=0;
+	unsigned short data_buf = 0;
+	float data_buf2=0;
 	int Hist[16384]={0,};
+	int Equal_Hist[16384]={0,};
+	int Hist_max_5,Hist_min_5= 0;
 
 	Hist_max = 0;
-	Hist_min = 16383;
+	Hist_min = 16384;
 	Hist_sum = 0;
 
-	for (int i=0;i<Image_Width*Image_Height;i++)
+	for (int i = 0;i < Image_Width * Image_Height; i++)
 	{
 		data_buf = 0;
-		data_buf = (*Image_in);//+((*(Image_in+1))<<8);
+		data_buf = (*Image_in++);
 		if (data_buf < Hist_min)
 		{
 			Hist_min = data_buf;
@@ -272,45 +511,191 @@ void autobc(unsigned short *Image_in, unsigned char *Image_out)
 			Hist_max = data_buf;
 		}
 		Hist[data_buf] = Hist[data_buf] + 1;
-		Image_in +=1;
 	}
 
-	for(int j = 0;j<16384;j++)
+	for(int i = 0; i < 16384; i++)
 	{
-		Hist_sum_buf += Hist[j];
-		if (Hist_sum_buf < 16384)
+		Hist_sum_buf += Hist[i];
+		Equal_Hist[i] = Hist_sum_buf;
+
+		if (Hist_sum_buf < Image_Width*Image_Height * 0.05)
 		{
-			Hist_sum_5low = j;
-			Hist_sum = Hist_sum_buf - Hist[j];
+			Hist_min_5 = i;
 		}
-		else if (Hist_sum_buf < (unsigned int)(Image_Width*Image_Height*0.95))
+		if (Hist_sum_buf < Image_Width*Image_Height * 0.95)
 		{
-			Hist_sum_5hign = j+1;
-			Hist_sum = Hist_sum_buf;
+			Hist_max_5 = i;
 		}
 	}
 
-	Image_in = (Image_in - Image_Width*Image_Height);//*2);
+	Image_in = (Image_in - Image_Width*Image_Height);
 
-	for (int k=0;k<Image_Width*Image_Height;k++)
+	for (int i=0;i<Image_Width*Image_Height;i++)
 	{
-		data_buf = (*Image_in);//+(*(Image_in + 1)<<8);
-		Image_in +=1;
-		if (data_buf < Hist_sum_5low)
-			*Image_out++ = 0;
-		else if (data_buf > Hist_sum_5hign)
+		data_buf = (*Image_in++);
+		//data_buf2 = 255*Equal_Hist[data_buf]/(Image_Width*Image_Height);
+		//if (data_buf > Hist_max_5)
+		//	data_buf2 = 255;
+		//else if (data_buf < Hist_min_5)
+		//	data_buf2 = 0;
+		//else
+		{
+
+			if ((Hist_max_5 - Hist_min_5) < 64)
+				data_buf2 = (float)(0.50 * 32 * (data_buf - Hist_min_5)/(Hist_max_5 - Hist_min_5) + 256 * 0.5);
+			else if ((Hist_max_5 - Hist_min_5) < 128)
+				data_buf2 = (float)(0.50 * 64 * (data_buf - Hist_min_5)/(Hist_max_5 - Hist_min_5) + 256 * 0.5);
+			else if ((Hist_max_5 - Hist_min_5) < 192)
+				data_buf2 = (float)(0.50 * 128 * (data_buf - Hist_min_5)/(Hist_max_5 - Hist_min_5) + 256 * 0.5);
+			else
+				data_buf2 = (float)(0.50 * 256 * (data_buf - Hist_min_5)/(Hist_max_5 - Hist_min_5) + 256 * 0.5);
+		}
+		if (data_buf2 > 255)
+		{
 			*Image_out++ = 255;
+		}
+		else if(data_buf2 < 0 )
+		{
+			*Image_out++ = 0;
+		}
+		else
+			*Image_out++ = (unsigned char)data_buf2;
+
+	}
+
+}
+
+void Cal_K(unsigned short *Image_B2,unsigned short *Image_B1,unsigned short *Image_K)
+{
+	unsigned int B2,B1,K=0;
+	FILE *fp_Bp,*fp_B,*fp_K= NULL;
+
+	for (int i = 0;i<Image_Width * Image_Height;i++)
+	{
+		B2 = *Image_B2++;
+		B1 = *Image_B1++;
+		if (B2 - B1 > 200)
+			*Image_K++ = 4096*(B2_aver - B_aver)/(B2 - B1);
 		else
 		{
-			Hist_sum_buf=0;
-			for (int h =Hist_sum_5low;h < data_buf;h++)
-				Hist_sum_buf += Hist[h];
-			*Image_out++ = 255* Hist_sum_buf/ Hist_sum;
+			*Image_K++ = 4096;
+			Bp_Space[i] = 1;
+		}
+
+	}
+	*Image_K = B2_aver;
+	Image_K = Image_K - Image_Width * Image_Height;
+	fp_K = fopen("E:\\K.dat","wb");
+	fwrite(Image_K,Image_Width * Image_Height*2+2,1,fp_K);
+	fp_Bp = fopen("E:\\Bp.dat","wb");
+	fwrite(Bp_Space,Image_Width * Image_Height,1,fp_Bp);
+}
+
+void Calculate_B1(unsigned short *Image_in)
+{
+	unsigned long long aver_buf=0;
+	Cal_cnt++;
+	for (int i = 0;i<Image_Width * Image_Height;i++)
+	{	
+		Buffer_Space[i] += *Image_in++;
+		if (Cal_cnt == 16)
+		{
+			B_Space[i] = unsigned int (Buffer_Space[i] / 16);
+			aver_buf += B_Space[i];
+			Buffer_Space[i] = 0;
 		}
 	}
+
+	if (Cal_cnt == 16)
+	{
+		aver_buf = aver_buf / (Image_Width * Image_Height);
+		B_aver = unsigned short (aver_buf);
+		if (B1_Cal_30 == 1)
+			B_aver_30 = unsigned short (aver_buf);
+		B1_Cal = 0;
+		B1_Cal_30=0;
+		Cal_cnt = 0;
+	}
+
+}
+
+void Calculate_B2(unsigned short *Image_in)
+{
+	unsigned long long aver_buf=0;
+	Cal_cnt++;
+	for (int i = 0;i<Image_Width * Image_Height;i++)
+	{	
+		Buffer_Space[i] += *Image_in++;
+		if (Cal_cnt == 16)
+		{
+			B2_Space[i] = unsigned int (Buffer_Space[i] / 16);
+			aver_buf += B2_Space[i];
+			Buffer_Space[i] = 0;
+		}
+	}
+
+	if (Cal_cnt == 16)
+	{
+		B2_aver = aver_buf / (Image_Width * Image_Height);
+		Cal_K(B2_Space,B_Space,K_Space);
+		B2_Cal = 0;
+		Cal_cnt = 0;
+	}
+
+}
+
+void Cal_Frame_Aver(unsigned short *Image_in)
+{
+
+	for (int i = 0;i<Image_Width * Image_Height;i++)
+	{
+		average[ave_cnt] += *Image_in++;
+	}
+	average[ave_cnt] = average[ave_cnt]/(Image_Width*Image_Height);
+
+	ave_cnt++;
+	if (ave_cnt == 10)
+	{
+		ave_cnt = 0;
+		aver_screen = 0;
+		for (int i=0;i<10;i++)
+			aver_screen += average[i];
+		aver_screen /= 10;
+	}
+	Image_in =  (Image_in - Image_Width*Image_Height); 
 
 
 }
+
+void Cal_Color(unsigned char *Image_in,unsigned char *Image_out)
+{
+	unsigned char *Y_space,*U_space,*V_space;
+	unsigned char Y_data_buf;
+
+	Y_space = Image_out;
+	U_space = Image_out + Image_Width*Image_Height;
+	V_space = Image_out + Image_Width*(Image_Height+60);
+
+	for (int heit =0;heit<Image_Height;heit++)
+	{
+		for (int wid=0;wid<Image_Width;wid++)
+		{	
+			Y_data_buf =  *Image_in++;
+
+			*Y_space++ = tmpcolor[Y_data_buf * 3];
+
+			if ((heit %2 == 0) && (wid %2 == 0))
+			{
+				*U_space++ = tmpcolor[Y_data_buf * 3 + 2];
+				*V_space++ = tmpcolor[Y_data_buf * 3 + 1];
+			}
+		}
+	}
+
+
+
+}
+
 
 UINT WINAPI CDemoPlayerDlg::udpRecvThread(PVOID pM){
 	ThreadParams *pObj = (ThreadParams*)pM;
@@ -331,7 +716,7 @@ UINT WINAPI CDemoPlayerDlg::udpRecvThread(PVOID pM){
 	iLen = sizeof(saclient);
 	float nowtemp;
 	float  average;
-	int count=0;
+	
 	while(1)
 	{
 
@@ -410,7 +795,7 @@ UINT WINAPI CDemoPlayerDlg::udpRecvThread(PVOID pM){
 					memset(savebuf16bit,0,j);
 					savenum =0;
 					j= 0;
-					count=0;
+					
 					n= 0;
 					TRACE(" throw away, framenum:%d \n", framenum);
 
@@ -419,87 +804,55 @@ UINT WINAPI CDemoPlayerDlg::udpRecvThread(PVOID pM){
 				{
 
 					memset(yuvBuf1,0x80,Image_Width*Image_Height*3/2);
-					//memcpy(yuvBuf1,udprecvvideobuf,320*256);
+					
+					Bp_replace(savebuf16bit,Bp_Space,savebuf16bit);
+
+					if (B1_Cal == 1)
+						Calculate_B1(savebuf16bit);
+
+					if (B2_Cal == 1)
+						Calculate_B2(savebuf16bit);
+
+					if (B1_Cal_30 == 1)
+						Calculate_B1(savebuf16bit);
+
+					Cal_Frame_Aver(savebuf16bit);
+					twopointcal(savebuf16bit,B_Space,K_Space,B_aver,savebuf16bit);
+
+					DDE(savebuf16bit,savebuf16bit);
 					autobc(savebuf16bit,yuvBuf1);
-#if 0
-					for (m=0;m<Image_Width*Image_Height;m++)
+					Cal_Color(yuvBuf1,yuvBuf1);
+
+					if (mouseonvideo == 1)
 					{
-						if (m=0)
-						{
-							yuvBuf1[m]=Arcus_YUV[0];
+						//TRACE("*** X = %ld Y = %ld  :  T=  %.2f\n ",XX,YY,nowtemp);
 
-							yuvBuf1[m+Image_Width*Image_Height]=Arcus_YUV[1];
-							yuvBuf1[m+Image_Width*Image_Height+1]=Arcus_YUV[2];
-						}
-						else
-						{
-							yuvBuf1[m]=Arcus_YUV[m*3-1];
+						//nowtemp = savebuf16bit[(((int)YY)/ZoomSize*Image_Width+((int)XX)/ZoomSize)];
+						//nowtemp = 0.3138*pow((int)nowtemp,0.6491);
 
-							if ((m+1)%4==0)
-							{
-								yuvBuf1[m+Image_Width*Image_Height+Image_Width*count]=Arcus_YUV[m*3-1+1];
-								yuvBuf1[m+Image_Width*Image_Height+Image_Width*count+1]=Arcus_YUV[m*3-1+2];
-								n += 1;
-							}
-							if (n==319)
-							{
-								n=0;
-								count+=2;
-							}
-						}
+						nowtemp = (unsigned int)(savebuf16bit[(((unsigned int)YY)/2*320+((unsigned int)XX)/2)]);
+						nowtemp = 30 + float(nowtemp - B_aver_30)*50/(B2_aver - B_aver_30);
 
-
+						TRACE("********** X = %ld Y = %d  :  T=  %.2f  average = %f\n ",XX,YY,nowtemp,aver_screen);
 					}
-#endif
 
-					//TRACE("___savenum = %d, size:%d\n",framenum, savenum);
+					
 					if(!_init_render){
 						Dlg->m_render[ch].createRender(Dlg->m_view[ch].GetSafeHwnd(), VIDEO_YV12,Image_Width, Image_Height, 1);
 
 						_init_render = 1;
 					}
-					//TRACE("____ j = %d",j);
-					//fwrite(udprecvvideobuf,j, 1, pFile);
-					//memset(udprecvvideobuf,255,j);
-					//Dlg->m_render[ch].display(udprecvvideobuf);
-					//fwrite(yuvBuf1,320*384, 1, pFile);
-					fwrite(savebuf,savenum, 1, pFile);
+					
+					fwrite(yuvBuf1,Image_Width*Image_Height*3/2, 1, pFile);
 					Dlg->m_render[ch].display(yuvBuf1);
 
-
-					if (mouseonvideo == 1)
-					{
-						//GetCursorPos(&point);
-						/*
-						if (XX%2 == 1)
-						{
-						XX= XX-1;
-						}*/
-						//memcpy(nowmousecolor,(savebuf+(((int)YY)/2*640+XX)),2);
-						//nowtemp = 0.3138*pow(((nowmousecolor[1]<<8 )+ nowmousecolor[0]),0.6491);
-
-						//TRACE("*** X = %ld Y = %ld  :  T=  %.2f\n ",XX,YY,nowtemp);
-						for (i=0;i<j;i++)
-						{
-							average+=savebuf16bit[i];
-						}
-						average = average/j;
-
-						nowtemp = savebuf16bit[(((int)YY)/2*Image_Width+((int)XX)/2)];
-						nowtemp = 0.3138*pow((int)nowtemp,0.6491);
-
-						TRACE("********** X = %ld Y = %d  :  T=  %.2f  average = %f\n ",XX,YY,nowtemp,average);
-
-						//memset(nowmousecolor,0,10);
-					}
 
 					memset(udprecvvideobuf,0,j);
 					memset(savebuf,0,savenum);
 					memset(savebuf16bit,0,j);
 					savenum =0;
 					j=0;
-					count=0;
-
+					
 				}
 				recverrorflag =0;
 
@@ -514,21 +867,7 @@ UINT WINAPI CDemoPlayerDlg::udpRecvThread(PVOID pM){
 
 
 
-			/*
-			unsigned short tmp;
-			for (i=0;i<iRecv-4;i++)
-			{
-			tmp = recv_buf[i+4 +1];
-			tmp = tmp << 8;
-
-			tmp +=  (unsigned char)recv_buf[i+4];
-			savebuf16bit[j]= tmp;
-			tmp =  (tmp >> 3);
-			udprecvvideobuf[j]=tmp;
-
-			j++;
-			i++;
-			}*/
+		
 			unsigned short tmp;
 			for (i=0;i<iRecv-4;i++)
 			{
@@ -543,14 +882,6 @@ UINT WINAPI CDemoPlayerDlg::udpRecvThread(PVOID pM){
 				j++;
 				i++;
 			}
-
-
-
-			//memcpy(savebuf+savenum,recv_buf+4,iRecv-4);
-			//savenum = savenum+iRecv-4;
-
-
-
 
 
 		}
@@ -606,4 +937,28 @@ void CDemoPlayerDlg::OnMouseMove(UINT nFlags, CPoint point)
 	//TRACE("_____________________________ X = %ld Y = %d\n ",point.x,point.y);
 
 
+}
+
+void CDemoPlayerDlg::OnBnClickedButtonB1cal()
+{
+	// TODO: 在此添加控件通知处理程序代码
+	B1_Cal = 1;
+}
+
+void CDemoPlayerDlg::OnBnClickedButtonB1calof30()
+{
+	// TODO: 在此添加控件通知处理程序代码
+	B1_Cal_30 = 1;
+}
+
+void CDemoPlayerDlg::OnBnClickedButtonB2calof80()
+{
+	// TODO: 在此添加控件通知处理程序代码
+	B2_Cal = 1;
+}
+
+void CDemoPlayerDlg::OnBnClickedButtonfindbp()
+{
+	// TODO: 在此添加控件通知处理程序代码
+	Find_Bp_en = 1;
 }
