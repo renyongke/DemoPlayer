@@ -3,6 +3,9 @@
 
 #pragma once
 #include "d3d_render_interface.h"
+#include "afxwin.h"
+#include "afxcmn.h"
+#include "tchart_temperature.h"
 
 // CDemoPlayerDlg ¶Ô»°¿ò
 class CDemoPlayerDlg : public CDialog
@@ -41,4 +44,23 @@ public:
 	afx_msg void OnBnClickedButtonB1calof30();
 	afx_msg void OnBnClickedButtonB2calof80();
 	afx_msg void OnBnClickedButtonfindbp();
+	CStatic m_view_tempbar;
+	CStatic m_view_tempfloatbar;
+	afx_msg HBRUSH OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor);
+	afx_msg void OnInitMenuPopup(CMenu* pPopupMenu, UINT nIndex, BOOL bSysMenu);
+	afx_msg void OnTimer(UINT_PTR nIDEvent);
+	COLORREF m_bluecolor,m_redcolor,m_greencolor,m_blackcolor;
+	afx_msg void OnDrawBlock(CDC* pDC,int pXY);
+	afx_msg void OnDrawBlock2(CDC* pDC,int posYY);
+	CListCtrl m_list_posavr;
+	CTchart_temperature m_chart_temperature;
+	CTchart_temperature m_chart_frequency;
+	CTchart_temperature m_chart_hotcold;
+	afx_msg void OnAddisothermInterval();
+	afx_msg void OnAddisothermAbove();
+	afx_msg void OnAddisothermBelow();
+	afx_msg void OnUpdateAddisothermInterval(CCmdUI *pCmdUI);
+	afx_msg void OnUpdateAddisothermAbove(CCmdUI *pCmdUI);
+	afx_msg void OnUpdateAddisothermBelow(CCmdUI *pCmdUI);
+	afx_msg void OnRButtonDown(UINT nFlags, CPoint point);
 };

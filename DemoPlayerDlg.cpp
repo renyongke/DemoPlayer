@@ -14,6 +14,12 @@
 #include <iomanip>  
 #include <fstream>  
 
+#include "CAxes.h"
+#include "CAxis.h"
+#include "CScroll.h"
+#include "CSeries.h"
+#include "CTChart.h"
+
 #include "YUV/Arcus_YUV.h"
 #include "YUV/Inferno_YUV.h"
 #include "YUV/iron_YUV.h"
@@ -24,6 +30,9 @@
 
 #define Image_Width 320
 #define Image_Height 240//256
+#define Tempbar_Width 100
+#define Tempfloatbar_width 70
+#define ZoomSize 2
 
 using namespace std; 
 
@@ -97,6 +106,14 @@ unsigned char Find_Bp_en = 0;
 unsigned char Cal_cnt = 0;
 unsigned char tmpcolor[768];
 
+CDC *pDC;
+long posYY=200;
+long barXX =Image_Width*ZoomSize;
+long barYY = 200;
+
+bool m_IntervalChecked = FALSE;
+bool m_AboveChecked = FALSE;
+bool m_BelowChecked = FALSE;
 
 // 用于应用程序“关于”菜单项的 CAboutDlg 对话框
 
@@ -187,6 +204,9 @@ void Data_Space_Init(void)
 
 CDemoPlayerDlg::CDemoPlayerDlg(CWnd* pParent /*=NULL*/)
 	: CDialog(CDemoPlayerDlg::IDD, pParent)
+	//, m_chart_temperature(0)
+	//, m_chart_frequency(0)
+	//, m_chart_hotcold(0)
 {
 	m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
 }
@@ -195,6 +215,12 @@ void CDemoPlayerDlg::DoDataExchange(CDataExchange* pDX)
 {
 	CDialog::DoDataExchange(pDX);
 	DDX_Control(pDX, IDC_STATIC_v0, m_view[0]);
+	DDX_Control(pDX, IDC_STATIC_TEMP_BAR, m_view_tempbar);
+	DDX_Control(pDX, IDC_STATIC_TEMP_FLOATBAR, m_view_tempfloatbar);
+	DDX_Control(pDX, IDC_LIST_POSAVR, m_list_posavr);
+	DDX_Control(pDX, IDC_TCHART_TEMPERATURE, m_chart_temperature);
+	DDX_Control(pDX, IDC_TCHART_FREQUENCY, m_chart_frequency);
+	DDX_Control(pDX, IDC_TCHART_HOTCOLD, m_chart_hotcold);
 }
 
 BEGIN_MESSAGE_MAP(CDemoPlayerDlg, CDialog)
@@ -207,6 +233,16 @@ BEGIN_MESSAGE_MAP(CDemoPlayerDlg, CDialog)
 	ON_BN_CLICKED(IDC_BUTTON_B1Calof30, &CDemoPlayerDlg::OnBnClickedButtonB1calof30)
 	ON_BN_CLICKED(IDC_BUTTON_B2calof80, &CDemoPlayerDlg::OnBnClickedButtonB2calof80)
 	ON_BN_CLICKED(IDC_BUTTON_findBP, &CDemoPlayerDlg::OnBnClickedButtonfindbp)
+	ON_WM_CTLCOLOR()
+	ON_WM_INITMENUPOPUP()
+	ON_WM_TIMER()
+	ON_COMMAND(ID_ADDISOTHERM_INTERVAL, &CDemoPlayerDlg::OnAddisothermInterval)
+	ON_COMMAND(ID_ADDISOTHERM_ABOVE, &CDemoPlayerDlg::OnAddisothermAbove)
+	ON_COMMAND(ID_ADDISOTHERM_BELOW, &CDemoPlayerDlg::OnAddisothermBelow)
+	ON_UPDATE_COMMAND_UI(ID_ADDISOTHERM_INTERVAL, &CDemoPlayerDlg::OnUpdateAddisothermInterval)
+	ON_UPDATE_COMMAND_UI(ID_ADDISOTHERM_ABOVE, &CDemoPlayerDlg::OnUpdateAddisothermAbove)
+	ON_UPDATE_COMMAND_UI(ID_ADDISOTHERM_BELOW, &CDemoPlayerDlg::OnUpdateAddisothermBelow)
+	ON_WM_RBUTTONDOWN()
 END_MESSAGE_MAP()
 
 
@@ -240,6 +276,63 @@ BOOL CDemoPlayerDlg::OnInitDialog()
 	SetIcon(m_hIcon, FALSE);		// 设置小图标
 
 	// TODO: 在此添加额外的初始化代码
+	m_bluecolor = RGB(0,209,206);
+	m_redcolor = RGB(255,0,0);
+	m_greencolor= RGB(0,255,0);
+	m_blackcolor = RGB(0,0,0);
+	
+	SetTimer(1,1000,NULL);
+
+	int tmpsize  ;
+	tmpsize = Image_Width*2/9;
+	m_list_posavr.InsertColumn(0,_T("Lable"),LVCFMT_LEFT,tmpsize,0);
+	m_list_posavr.InsertColumn(1,_T("ROI"),LVCFMT_LEFT,tmpsize,1);
+	m_list_posavr.InsertColumn(2,_T("Avg."),LVCFMT_RIGHT,tmpsize,2);
+	m_list_posavr.InsertColumn(3,_T("MIN."),LVCFMT_RIGHT,tmpsize,3);
+	m_list_posavr.InsertColumn(4,_T("MAX."),LVCFMT_RIGHT,tmpsize,4);
+	m_list_posavr.InsertColumn(5,_T("std."),LVCFMT_RIGHT,tmpsize,5);
+	m_list_posavr.InsertColumn(6,_T("Emissivity"),LVCFMT_RIGHT,tmpsize,6);
+	m_list_posavr.InsertColumn(7,_T("Atm.Temp."),LVCFMT_RIGHT,tmpsize,7);
+	m_list_posavr.InsertColumn(8,_T("Atm.Trans."),LVCFMT_RIGHT,tmpsize,8);
+
+
+
+	CSeries ser_temperature = (CSeries)m_chart_temperature.Series(0);
+	ser_temperature.FillSampleValues(50);
+	
+	m_chart_temperature.AddSeries(0);
+	CSeries ser_temperature2 = (CSeries)m_chart_temperature.Series(1);
+	ser_temperature2.FillSampleValues(50);
+	ser_temperature.put_Title(_T("sp1(Temperature)"));
+	ser_temperature2.put_Title(_T("sp2(Temperature)"));
+
+	CAxes axes = (CAxes)m_chart_temperature.get_Axis();
+	CAxis axis = axes.get_Left();
+	CAxis axis2 = axis.get_Title();
+
+
+	CSeries ser_frequency = (CSeries)m_chart_frequency.Series(0);
+	ser_frequency.FillSampleValues(50);
+
+	//m_chart_frequency.AddSeries(0);
+	CSeries ser_frequency2 = (CSeries)m_chart_frequency.Series(1);
+	//ser_frequency2.FillSampleValues(50);
+	ser_frequency.put_Title(_T("sp1(Temperature)"));
+	//ser_frequency2.put_Title(_T("sp2(Temperature)"));
+
+	CAxes axesf = (CAxes)m_chart_frequency.get_Axis();
+	CAxis axisf = axesf.get_Left();
+	CAxis axisf2 = axisf.get_Title();
+
+
+	CSeries ser_hotcold = (CSeries)m_chart_hotcold.Series(0);
+	ser_hotcold.FillSampleValues(50);
+	ser_hotcold.put_Title(_T("sp1(Temperature)"));
+	
+	CAxes axesh = (CAxes)m_chart_hotcold.get_Axis();
+	CAxis axish = axesh.get_Left();
+	CAxis axisfh = axish.get_Title();
+
 	Data_Space_Init();
 	memset(recv_buf,0,sizeof(recv_buf));
 
@@ -322,7 +415,38 @@ void CDemoPlayerDlg::OnPaint()
 
 	CWnd *pWnd;
 	pWnd = GetDlgItem(IDC_STATIC_v0);
-	pWnd ->MoveWindow(CRect(0,0,Image_Width*2,Image_Height*2));
+	pWnd ->MoveWindow(CRect(0,0,Image_Width*ZoomSize,Image_Height*ZoomSize));
+
+	CWnd *pwnd2;
+	pwnd2 = GetDlgItem(IDC_STATIC_TEMP_BAR);
+	pwnd2->MoveWindow(CRect(Image_Width*ZoomSize,0,Image_Width*ZoomSize+Tempbar_Width,Image_Height*ZoomSize));
+
+	CWnd *pwnd3;
+	pwnd3 = GetDlgItem(IDC_STATIC_TEMP_FLOATBAR);
+	pwnd3->MoveWindow(CRect(Image_Width*ZoomSize+Tempbar_Width,0,Image_Width*ZoomSize+Tempbar_Width+Tempfloatbar_width,Image_Height*ZoomSize));
+
+
+	CWnd *pWnd4;
+	pWnd4 = GetDlgItem(IDC_LIST_POSAVR);
+	pWnd4 ->MoveWindow(CRect(0,Image_Height*ZoomSize,Image_Width*ZoomSize,Image_Height*ZoomSize+300));
+
+	CWnd *pWnd5;
+	pWnd5 = GetDlgItem(IDC_TCHART_TEMPERATURE);
+	pWnd5 ->MoveWindow(CRect(Image_Width*ZoomSize+Tempbar_Width+Tempfloatbar_width,0,Image_Width*ZoomSize+Tempbar_Width+Tempfloatbar_width+600,Image_Height*ZoomSize));
+
+	CWnd *pWnd6;
+	pWnd6 = GetDlgItem(IDC_TCHART_FREQUENCY);
+	pWnd6 ->MoveWindow(CRect(Image_Width*ZoomSize,Image_Height*ZoomSize,Image_Width*ZoomSize+400,Image_Height*ZoomSize+300));
+
+	CWnd *pWnd7;
+	pWnd7 = GetDlgItem(IDC_TCHART_HOTCOLD);
+	pWnd7 ->MoveWindow(CRect(Image_Width*ZoomSize+400,Image_Height*ZoomSize,Image_Width*ZoomSize+400+400,Image_Height*ZoomSize+300));
+
+	pDC= this->GetDC();
+	OnDrawBlock(pDC,2);
+
+	pDC= this->GetDC();
+	OnDrawBlock2(pDC,posYY);
 
 }
 
@@ -796,7 +920,7 @@ UINT WINAPI CDemoPlayerDlg::udpRecvThread(PVOID pM){
 					savenum =0;
 					j= 0;
 					
-					n= 0;
+					
 					TRACE(" throw away, framenum:%d \n", framenum);
 
 				}
@@ -819,9 +943,7 @@ UINT WINAPI CDemoPlayerDlg::udpRecvThread(PVOID pM){
 					Cal_Frame_Aver(savebuf16bit);
 					twopointcal(savebuf16bit,B_Space,K_Space,B_aver,savebuf16bit);
 
-					DDE(savebuf16bit,savebuf16bit);
-					autobc(savebuf16bit,yuvBuf1);
-					Cal_Color(yuvBuf1,yuvBuf1);
+					
 
 					if (mouseonvideo == 1)
 					{
@@ -830,13 +952,15 @@ UINT WINAPI CDemoPlayerDlg::udpRecvThread(PVOID pM){
 						//nowtemp = savebuf16bit[(((int)YY)/ZoomSize*Image_Width+((int)XX)/ZoomSize)];
 						//nowtemp = 0.3138*pow((int)nowtemp,0.6491);
 
-						nowtemp = (unsigned int)(savebuf16bit[(((unsigned int)YY)/2*320+((unsigned int)XX)/2)]);
+						nowtemp = (unsigned int)(savebuf16bit[(((unsigned int)YY)/ZoomSize*320+((unsigned int)XX)/ZoomSize)]);
 						nowtemp = 30 + float(nowtemp - B_aver_30)*50/(B2_aver - B_aver_30);
 
 						TRACE("********** X = %ld Y = %d  :  T=  %.2f  average = %f\n ",XX,YY,nowtemp,aver_screen);
 					}
 
-					
+					DDE(savebuf16bit,savebuf16bit);
+					autobc(savebuf16bit,yuvBuf1);
+					Cal_Color(yuvBuf1,yuvBuf1);
 					if(!_init_render){
 						Dlg->m_render[ch].createRender(Dlg->m_view[ch].GetSafeHwnd(), VIDEO_YV12,Image_Width, Image_Height, 1);
 
@@ -848,12 +972,14 @@ UINT WINAPI CDemoPlayerDlg::udpRecvThread(PVOID pM){
 
 
 					memset(udprecvvideobuf,0,j);
-					memset(savebuf,0,savenum);
+					memset(savebuf,0,Image_Width*Image_Height*ZoomSize);
 					memset(savebuf16bit,0,j);
+					
 					savenum =0;
 					j=0;
 					
 				}
+				
 				recverrorflag =0;
 
 
@@ -926,13 +1052,25 @@ void CDemoPlayerDlg::OnMouseMove(UINT nFlags, CPoint point)
 		mouseonvideo = 1;
 		XX=point.x;
 		YY=point.y;
-
 	}
 	else
 	{
-
 		mouseonvideo = 0;
 	}
+
+	CRect rect_IDC_STATIC_TEMP_BAR;
+	GetDlgItem(IDC_STATIC_TEMP_BAR)->GetWindowRect(rect_IDC_STATIC_TEMP_BAR);
+	ScreenToClient(rect_IDC_STATIC_TEMP_BAR);
+	if (PtInRect(&rect_IDC_STATIC_TEMP_BAR,point))
+	{
+		barXX = point.x;
+		barYY = point.y;
+
+		pDC= this->GetDC();
+		OnDrawBlock(pDC,2);
+
+	}
+
 	//TRACE("___mouseonvideo=%d\n",mouseonvideo);
 	//TRACE("_____________________________ X = %ld Y = %d\n ",point.x,point.y);
 
@@ -961,4 +1099,302 @@ void CDemoPlayerDlg::OnBnClickedButtonfindbp()
 {
 	// TODO: 在此添加控件通知处理程序代码
 	Find_Bp_en = 1;
+}
+
+HBRUSH CDemoPlayerDlg::OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor)
+{
+	HBRUSH hbr = CDialog::OnCtlColor(pDC, pWnd, nCtlColor);
+
+	// TODO:  在此更改 DC 的任何属性
+	if (pWnd->GetDlgCtrlID()==IDC_STATIC_TEMP_BAR)
+	{
+		pDC->SetBkColor(m_bluecolor);
+
+		HBRUSH b = CreateSolidBrush(m_bluecolor);
+		return b;
+
+
+	}
+	// TODO:  如果默认的不是所需画笔，则返回另一个画笔
+	return hbr;
+}
+
+void CDemoPlayerDlg::OnInitMenuPopup(CMenu* pPopupMenu, UINT nIndex, BOOL bSysMenu)
+{
+	CDialog::OnInitMenuPopup(pPopupMenu, nIndex, bSysMenu);
+
+	// TODO: 在此处添加消息处理程序代码
+
+	if (!bSysMenu && pPopupMenu)
+	{
+		CCmdUI cmdUI;
+		cmdUI.m_pOther =NULL;
+		cmdUI.m_pMenu = pPopupMenu;
+		cmdUI.m_pSubMenu = NULL;
+
+		UINT count = pPopupMenu->GetMenuItemCount();
+		cmdUI.m_nIndex = count;
+
+		for (UINT i = 0;i<count;i++)
+		{
+			UINT nID = pPopupMenu->GetMenuItemID(i);
+			if ((-1 ==nID)||(0 == nID))
+			{
+				continue;
+			}
+
+			//cmdUI.m_nID= nID;
+			//cmdUI.m_nIndex = i;
+			//cmdUI.DoUpdate(this,FALSE);
+
+			if (nID ==ID_ADDISOTHERM_INTERVAL) 
+			{
+				pPopupMenu->CheckMenuItem(ID_ADDISOTHERM_INTERVAL, MF_BYCOMMAND | (m_IntervalChecked ? MF_CHECKED : MF_UNCHECKED));
+			}
+			if (nID ==ID_ADDISOTHERM_ABOVE)
+			{
+				pPopupMenu->CheckMenuItem(ID_ADDISOTHERM_ABOVE, MF_BYCOMMAND | (m_AboveChecked ? MF_CHECKED : MF_UNCHECKED));
+			}
+			if (nID ==ID_ADDISOTHERM_BELOW)
+			{
+				pPopupMenu->CheckMenuItem(ID_ADDISOTHERM_BELOW, MF_BYCOMMAND | (m_BelowChecked ? MF_CHECKED : MF_UNCHECKED));
+			}
+
+		}
+	}
+
+
+}
+
+void CDemoPlayerDlg::OnTimer(UINT_PTR nIDEvent)
+{
+	// TODO: 在此添加消息处理程序代码和/或调用默认值
+	int tmpposX;
+	int tmpposY;
+	
+	tmpposX = Image_Width*ZoomSize+Tempbar_Width;
+	tmpposY = Image_Height*ZoomSize;
+
+
+	InvalidateRect(&CRect(tmpposX,0,tmpposX+Tempfloatbar_width,tmpposY),TRUE);
+	UpdateWindow();
+	pDC= this->GetDC();
+	OnDrawBlock2(pDC,posYY);
+	pDC= this->GetDC();
+	OnDrawBlock(pDC,2);
+
+	posYY+=10;
+
+	if (posYY>Image_Height*ZoomSize-30)
+	{
+		posYY =100;
+	}
+
+	CSeries ser_temperature2 = (CSeries)m_chart_temperature.Series(1);
+	CSeries ser_temperature = (CSeries)m_chart_temperature.Series(0);
+	ser_temperature.Add(900,_T("lable"),1);
+	ser_temperature2.Add(800,_T("lable"),1);
+	//m_chart.get_Axis()->
+	CAxes axesDemo = (CAxes)m_chart_temperature.get_Axis();
+	CAxis axisDemo = axesDemo.get_Bottom();
+	axisDemo.Scroll(1.0,TRUE);
+	
+	//CSeries ser_frequency2 = (CSeries)m_chart_frequency.Series(1);
+	CSeries ser_frequency = (CSeries)m_chart_frequency.Series(0);
+	ser_frequency.Add(900,_T("lable"),1);
+	//ser_frequency2.Add(800,_T("lable"),1);
+	//m_chart.get_Axis()->
+	CAxes axesDemof = (CAxes)m_chart_frequency.get_Axis();
+	CAxis axisDemof = axesDemof.get_Bottom();
+	axisDemof.Scroll(1.0,TRUE);
+
+	CSeries ser_hotcold = (CSeries)m_chart_hotcold.Series(0);
+	ser_hotcold.Add(900,_T("lable"),1);
+	CAxes axesDemoh = (CAxes)m_chart_hotcold.get_Axis();
+	CAxis axisDemoh = axesDemoh.get_Bottom();
+	axisDemoh.Scroll(1.0,TRUE);
+
+
+	CDialog::OnTimer(nIDEvent);
+}
+void CDemoPlayerDlg::OnDrawBlock2(CDC* pDC,int posYY)
+{
+
+
+	int tmpposX;
+	int tmpposY;
+	
+
+	tmpposX = Image_Width*ZoomSize+Tempbar_Width;
+	tmpposY = Image_Height*ZoomSize;
+	
+
+
+	CPen NewPen3(PS_SOLID,1,m_blackcolor);
+	CPen *pOldPen3;
+	pOldPen3 = pDC->SelectObject(&NewPen3);
+	pDC->Rectangle(tmpposX+10,0,tmpposX+Tempfloatbar_width-10,tmpposY);
+	pDC->Rectangle(tmpposX+5,posYY+5,tmpposX+Tempfloatbar_width-5,posYY);
+
+	CBrush brush5 ,*pOldBrush5;
+	brush5.CreateSolidBrush(m_redcolor);
+	pOldBrush5 = pDC->SelectObject(&brush5);
+	pDC->Rectangle(tmpposX+10+(Tempfloatbar_width-20)/3,posYY+15,tmpposX+10+(Tempfloatbar_width-20)*2/3,posYY+10);
+	pDC->SelectObject(pOldBrush5);
+	brush5.DeleteObject();
+
+	pDC->Rectangle(tmpposX+5,posYY+25,tmpposX+Tempfloatbar_width-5,posYY+20);
+	pDC->SelectObject(pOldPen3);
+	NewPen3.DeleteObject();
+	ReleaseDC(pDC);	
+
+
+
+}
+CString lcstr[] = {_T("30"),_T("29"),_T("28"),_T("27"),_T("26"),_T("25"),_T("24"),_T("23"),_T("22"),_T("21"),_T("20"),_T("19"),_T("18")_T("17")_T("16"),_T("15"),_T("14")};
+void CDemoPlayerDlg::OnDrawBlock(CDC* pDC,int pXY)
+{
+	CBrush brush ,*pOldBrush;
+	int tmpposX;
+	int tmpposY;
+	int tmplineX;
+	int stepY;
+
+	tmpposX = Image_Width*ZoomSize;
+	tmpposY = Image_Height*ZoomSize;
+	tmplineX = tmpposX+Tempbar_Width/2;
+	stepY = (tmpposY -0)/12; //****************
+	brush.CreateSolidBrush(m_redcolor);
+	pOldBrush = pDC->SelectObject(&brush);
+	pDC->Rectangle(tmpposX,0,tmpposX+Tempbar_Width*2/5,tmpposY);
+	pDC->SelectObject(pOldBrush);
+	brush.DeleteObject();
+	CPen NewPen(PS_SOLID,1,m_greencolor);
+	CPen *pOldPen;
+	pOldPen = pDC->SelectObject(&NewPen);
+	pDC->Rectangle(tmpposX+Tempbar_Width*3/5,0,tmpposX+Tempbar_Width,tmpposY);
+	pDC->SelectObject(pOldPen);
+	NewPen.DeleteObject();
+	CPen pen2(PS_SOLID,2,m_blackcolor);
+	CPen *pOldPen2;
+	pOldPen2 =pDC->SelectObject(&pen2);
+	
+	pDC->MoveTo(tmplineX,0);
+	pDC->LineTo(tmplineX,tmpposY);
+
+
+	for (int i =0; i<12;i++)
+	{
+		if (i %2 ==0)
+		{
+			pDC->MoveTo(tmplineX,stepY*i);
+			pDC->LineTo(tmplineX+10,stepY*i);
+			pDC->TextOut(tmplineX+10,stepY*i-5,lcstr[i]);
+		}
+		else
+		{
+			pDC->MoveTo(tmplineX,stepY*i);
+			pDC->LineTo(tmplineX+5,stepY*i);
+		}
+	
+	}
+
+
+
+	pDC->SelectObject(pOldPen2);
+	pOldPen2->DeleteObject();
+
+
+
+	switch(pXY)
+	{
+	case 1:
+		brush.CreateSolidBrush(m_redcolor);
+		break;
+	case 2:
+		brush.CreateSolidBrush(m_greencolor);
+		break;
+	case 3:
+		brush.CreateSolidBrush(m_redcolor);
+		break;
+	default:
+		brush.CreateSolidBrush(m_redcolor);
+	}
+
+
+	pOldBrush = pDC->SelectObject(&brush);
+	if (barYY<tmpposY/10)
+	{
+		barYY=tmpposY/10;
+	}
+	else if (barYY>tmpposY*9/10)
+	{
+		barYY=tmpposY*9/10;
+	}
+
+
+	pDC->Rectangle(tmpposX,barYY-tmpposY/10,tmpposX+Tempbar_Width*2/5,barYY+tmpposY/10);
+	pDC->SelectObject(pOldBrush);
+	brush.DeleteObject();
+
+
+	ReleaseDC(pDC);		
+
+
+
+}
+void CDemoPlayerDlg::OnAddisothermInterval()
+{
+	// TODO: 在此添加命令处理程序代码
+	m_IntervalChecked = !m_IntervalChecked;
+}
+
+void CDemoPlayerDlg::OnAddisothermAbove()
+{
+	// TODO: 在此添加命令处理程序代码
+	m_AboveChecked = !m_AboveChecked;
+}
+
+void CDemoPlayerDlg::OnAddisothermBelow()
+{
+	// TODO: 在此添加命令处理程序代码
+	m_BelowChecked = !m_BelowChecked;
+}
+
+void CDemoPlayerDlg::OnUpdateAddisothermInterval(CCmdUI *pCmdUI)
+{
+	// TODO: 在此添加命令更新用户界面处理程序代码
+	pCmdUI->SetCheck(m_IntervalChecked);
+}
+
+void CDemoPlayerDlg::OnUpdateAddisothermAbove(CCmdUI *pCmdUI)
+{
+	// TODO: 在此添加命令更新用户界面处理程序代码
+	pCmdUI->SetCheck(m_AboveChecked);
+}
+
+void CDemoPlayerDlg::OnUpdateAddisothermBelow(CCmdUI *pCmdUI)
+{
+	// TODO: 在此添加命令更新用户界面处理程序代码
+	pCmdUI->SetCheck(m_BelowChecked);
+}
+
+void CDemoPlayerDlg::OnRButtonDown(UINT nFlags, CPoint point)
+{
+	// TODO: 在此添加消息处理程序代码和/或调用默认值
+
+	CRect rect_IDC_STATIC_TEMP_BAR;
+	m_view_tempbar.GetWindowRect(&rect_IDC_STATIC_TEMP_BAR);
+
+	if (PtInRect(&rect_IDC_STATIC_TEMP_BAR,point))
+	{
+		TRACE("mouse on \n");
+		CMenu menu_IDR_MENU_TEMPBAR;
+		menu_IDR_MENU_TEMPBAR.LoadMenu(IDR_MENU_TEMPBAR);
+		CMenu *pPopup = menu_IDR_MENU_TEMPBAR.GetSubMenu(0);
+		pPopup->TrackPopupMenu(TPM_LEFTALIGN | TPM_RIGHTBUTTON,point.x,point.y,this);
+	}
+
+
+	CDialog::OnRButtonDown(nFlags, point);
 }

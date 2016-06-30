@@ -216,6 +216,10 @@
 					/>
 				</FileConfiguration>
 			</File>
+			<File
+				RelativePath=".\tchart_temperature.cpp"
+				>
+			</File>
 		</Filter>
 		<Filter
 			Name="Í·ÎÄ¼þ"
@@ -224,6 +228,26 @@
 			>
 			<File
 				RelativePath=".\YUV\Arcus_YUV.h"
+				>
+			</File>
+			<File
+				RelativePath=".\CAxes.h"
+				>
+			</File>
+			<File
+				RelativePath=".\CAxis.h"
+				>
+			</File>
+			<File
+				RelativePath=".\CScroll.h"
+				>
+			</File>
+			<File
+				RelativePath=".\CSeries.h"
+				>
+			</File>
+			<File
+				RelativePath=".\CTChart.h"
 				>
 			</File>
 			<File
@@ -271,6 +295,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\tchart_temperature.h"
+				>
+			</File>
+			<File
 				RelativePath=".\YUV\Whot_YUV.h"
 				>
 			</File>
@@ -302,6 +330,10 @@
 		<Global
 			Name="RESOURCE_FILE"
 			Value="DemoPlayer.rc"
+		/>
+		<Global
+			Name="{B6C10489-FB89-11D4-93C9-006008A7EED4}"
+			Value="CTchart_temperature"
 		/>
 	</Globals>
 </VisualStudioProject>
