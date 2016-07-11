@@ -70,6 +70,7 @@ BOOL CDemoPlayerApp::InitInstance()
 	{
 		// TODO: 在此放置处理何时用
 		//  “取消”来关闭对话框的代码
+		
 	}
 
 	// 由于对话框已关闭，所以将返回 FALSE 以便退出应用程序，

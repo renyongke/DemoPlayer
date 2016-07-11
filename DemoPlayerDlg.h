@@ -16,8 +16,9 @@ public:
 	CStatic m_view[4];
 	Cd3d_render_interface m_render[4];
 	HANDLE udpRecvThreadHandle;
-
+	HANDLE CalcThreadHandle;
 	static UINT WINAPI udpRecvThread(PVOID pM);
+	static UINT WINAPI calcThread(PVOID pM);
 	
 	
 
@@ -39,6 +40,7 @@ protected:
 	afx_msg HCURSOR OnQueryDragIcon();
 	DECLARE_MESSAGE_MAP()
 public:
+	
 	afx_msg void OnMouseMove(UINT nFlags, CPoint point);
 	afx_msg void OnBnClickedButtonB1cal();
 	afx_msg void OnBnClickedButtonB1calof30();
@@ -49,9 +51,13 @@ public:
 	afx_msg HBRUSH OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor);
 	afx_msg void OnInitMenuPopup(CMenu* pPopupMenu, UINT nIndex, BOOL bSysMenu);
 	afx_msg void OnTimer(UINT_PTR nIDEvent);
-	COLORREF m_bluecolor,m_redcolor,m_greencolor,m_blackcolor;
+	COLORREF m_bluecolor,m_bluecolor2,m_redcolor,m_greencolor,m_blackcolor,m_yellowcolor,m_whitecolor,m_magentacolor,m_cyancolor;
 	afx_msg void OnDrawBlock(CDC* pDC,int pXY);
 	afx_msg void OnDrawBlock2(CDC* pDC,int posYY);
+	afx_msg void OnDrawHistogram(CDC* pDC);
+	afx_msg void OnDrawSpot(CDC* pDC,int posXX,int posYY,int sport);
+	afx_msg void OnDrawArea(CDC* pDC,int startPosXX,int startPosYY,int posXX,int posYY,int area);
+	afx_msg void OnDrawHotColdPlot(CDC* pDC,int startPosXX,int startPosYY,int posXX,int posYY,int size,bool Mode);
 	CListCtrl m_list_posavr;
 	CTchart_temperature m_chart_temperature;
 	CTchart_temperature m_chart_frequency;
@@ -63,4 +69,13 @@ public:
 	afx_msg void OnUpdateAddisothermAbove(CCmdUI *pCmdUI);
 	afx_msg void OnUpdateAddisothermBelow(CCmdUI *pCmdUI);
 	afx_msg void OnRButtonDown(UINT nFlags, CPoint point);
+	afx_msg void OnLButtonDown(UINT nFlags, CPoint point);
+	afx_msg void OnBnClickedButtonSetspot();
+	afx_msg void OnBnClickedButtonSetarea();
+	afx_msg void OnLButtonUp(UINT nFlags, CPoint point);
+	afx_msg void OnBnClickedButtonHotcoldplot();
+	afx_msg void OnBnClickedButtonHistogram();
+	afx_msg void OnNMClickListPosavr(NMHDR *pNMHDR, LRESULT *pResult);
+	afx_msg void OnToAddListControl(int sport);
+	afx_msg void OnToUpdateListControl(int row,int column,int sport);
 };
