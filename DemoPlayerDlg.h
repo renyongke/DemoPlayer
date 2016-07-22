@@ -51,9 +51,9 @@ public:
 	afx_msg HBRUSH OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor);
 	afx_msg void OnInitMenuPopup(CMenu* pPopupMenu, UINT nIndex, BOOL bSysMenu);
 	afx_msg void OnTimer(UINT_PTR nIDEvent);
-	COLORREF m_bluecolor,m_bluecolor2,m_redcolor,m_greencolor,m_blackcolor,m_yellowcolor,m_whitecolor,m_magentacolor,m_cyancolor;
-	afx_msg void OnDrawBlock(CDC* pDC,int pXY);
-	afx_msg void OnDrawBlock2(CDC* pDC,int posYY);
+	COLORREF m_bluecolor,m_bluecolor2,m_redcolor,m_greencolor,m_blackcolor,m_yellowcolor,m_whitecolor,m_magentacolor,m_cyancolor,m_tapecolor;
+	afx_msg void OnDrawTempBar(CDC* pDC,int pXY);
+	afx_msg void OnDrawFloatTempBar(CDC* pDC,int posYY);
 	afx_msg void OnDrawHistogram(CDC* pDC);
 	afx_msg void OnDrawSpot(CDC* pDC,int posXX,int posYY,int sport);
 	afx_msg void OnDrawArea(CDC* pDC,int startPosXX,int startPosYY,int posXX,int posYY,int area);
@@ -78,4 +78,13 @@ public:
 	afx_msg void OnNMClickListPosavr(NMHDR *pNMHDR, LRESULT *pResult);
 	afx_msg void OnToAddListControl(int sport);
 	afx_msg void OnToUpdateListControl(int row,int column,int sport);
+	CComboBox m_comboColor;
+	CComboBox m_combobox;
+	afx_msg void OnCbnSelchangeComboColor();
+	afx_msg void toChangeColor(CString color);
+	afx_msg void toChangeBarColor(CString color);
+	afx_msg void OnDrawBarColor(CDC* pDC);
+	afx_msg void OnBnClickedButtonTest();
+	afx_msg void OnClose();
+	afx_msg void toMarkPotColor(CDC* pDC,unsigned short *Image_in);
 };

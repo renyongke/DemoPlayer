@@ -34,6 +34,9 @@
 #define Tempfloatbar_width 70
 #define ZoomSize 2
 
+#define TIME1 1
+#define TIME2 2
+
 using namespace std; 
 
 #pragma comment(lib,"WS2_32")
@@ -84,7 +87,7 @@ int Hist_max,Hist_min,Hist_sum_5low,Hist_sum_5hign=0;
 unsigned char videoRecvBuf[4][1024*200];
 unsigned char yuvBuf[4][1920*1080*3/2];
 unsigned char yuvBuf1[Image_Width*Image_Height*3/2];
-
+float floataver=0;
 float  average[10];
 float  aver_screen=0;
 unsigned char ave_cnt=0;
@@ -107,12 +110,12 @@ unsigned char Find_Bp_en = 0;
 
 unsigned char Cal_cnt = 0;
 unsigned char tmpcolor[768];
-
+unsigned char tmprgbcolor[768];
 CDC *pDC;
 long posYY=200;
 long barXX =Image_Width*ZoomSize;
 long barYY = 200;
-
+long barTimeYY = 20; 
 bool m_IntervalChecked = FALSE;
 bool m_AboveChecked = FALSE;
 bool m_BelowChecked = FALSE;
@@ -134,11 +137,13 @@ bool m_actionUpdateListInfo = FALSE;
 bool m_drawTimePlot = FALSE;
 bool m_toInitSeriesTemp = FALSE;
 bool m_bufferfull = FALSE;
+bool m_closedemo= TRUE;
+bool m_testflag = FALSE;
 int histogramNum = 0;
 
 CString spotstr = _T("Sp");
 CString areastr = _T("Ar");
-CString lcstr[] = {_T("30"),_T("29"),_T("28"),_T("27"),_T("26"),_T("25"),_T("24"),_T("23"),_T("22"),_T("21"),_T("20"),_T("19"),_T("18")_T("17")_T("16"),_T("15"),_T("14")};
+CString lcstr[] = {_T("32"),_T("31.5"),_T("31"),_T("30.5"),_T("30"),_T("29.5"),_T("29"),_T("28.5"),_T("28"),_T("27.5"),_T("27"),_T("26.5"),_T("26"),_T("25.5"),_T("25"),_T("24.5"),_T("24")_T("23.5")_T("23"),_T("22.5"),_T("22")};
 int sportnum = 1,areanum = 1,listnum=1;
 long areastartX=0,areastartY=0;
 long maxTempPosX=0,maxTempPosY=0,minTempPosX=0,minTempPosY=0; 
@@ -270,7 +275,7 @@ void Data_Space_Init(void)
 	else
 		memset (Bp_Space,0,Image_Width*Image_Height);
 
-	fp_color = fopen("YUV-bhot.raw","rb");
+	fp_color = fopen("YUV-Bhot.raw","rb");
 	fread((char*)tmpcolor,1,768,fp_color);
 
 }
@@ -296,6 +301,8 @@ void CDemoPlayerDlg::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_TCHART_TEMPERATURE, m_chart_temperature);
 	DDX_Control(pDX, IDC_TCHART_FREQUENCY, m_chart_frequency);
 	DDX_Control(pDX, IDC_TCHART_HOTCOLD, m_chart_hotcold);
+	DDX_Control(pDX, IDC_COMBO_COLOR, m_comboColor);
+	
 }
 
 BEGIN_MESSAGE_MAP(CDemoPlayerDlg, CDialog)
@@ -325,6 +332,9 @@ BEGIN_MESSAGE_MAP(CDemoPlayerDlg, CDialog)
 	ON_BN_CLICKED(IDC_BUTTON_HOTCOLDPLOT, &CDemoPlayerDlg::OnBnClickedButtonHotcoldplot)
 	ON_BN_CLICKED(IDC_BUTTON_HISTOGRAM, &CDemoPlayerDlg::OnBnClickedButtonHistogram)
 	ON_NOTIFY(NM_CLICK, IDC_LIST_POSAVR, &CDemoPlayerDlg::OnNMClickListPosavr)
+	ON_CBN_SELCHANGE(IDC_COMBO_COLOR, &CDemoPlayerDlg::OnCbnSelchangeComboColor)
+	ON_BN_CLICKED(IDC_BUTTON_TEST, &CDemoPlayerDlg::OnBnClickedButtonTest)
+	ON_WM_CLOSE()
 END_MESSAGE_MAP()
 
 
@@ -381,6 +391,10 @@ BOOL CDemoPlayerDlg::OnInitDialog()
 	SetIcon(m_hIcon, FALSE);		// 设置小图标
 
 	// TODO: 在此添加额外的初始化代码
+	CString initcolor = "Bhot";
+	toChangeColor(initcolor);
+	toChangeBarColor(initcolor);
+
 	m_bluecolor = RGB(0,209,206);
 	m_bluecolor2 = RGB(0,0,255);
 	m_redcolor = RGB(255,0,0);
@@ -513,6 +527,17 @@ BOOL CDemoPlayerDlg::OnInitDialog()
 	ser_frequency.AddArray(1000,YValues,XValues);*/
 
 
+	m_comboColor.AddString(_T("Arcus"));
+	m_comboColor.AddString(_T("Bhot"));
+	m_comboColor.AddString(_T("Inferno"));
+	m_comboColor.AddString(_T("Iron"));
+	m_comboColor.AddString(_T("Memoriam"));
+	m_comboColor.AddString(_T("Rhot"));
+
+	m_comboColor.SetCurSel(1);
+
+
+
 
 	Data_Space_Init();
 	memset(recv_buf,0,sizeof(recv_buf));
@@ -623,11 +648,16 @@ void CDemoPlayerDlg::OnPaint()
 	pWnd7 = GetDlgItem(IDC_TCHART_HOTCOLD);
 	pWnd7 ->MoveWindow(CRect(Image_Width*ZoomSize+400,Image_Height*ZoomSize,Image_Width*ZoomSize+400+400,Image_Height*ZoomSize+300));
 
-	pDC= this->GetDC();
-	OnDrawBlock(pDC,2);
+	pDC = this->GetDC();
+	OnDrawBarColor(pDC);
 
 	pDC= this->GetDC();
-	OnDrawBlock2(pDC,posYY);
+	OnDrawTempBar(pDC,2);
+
+	
+
+	pDC= this->GetDC();
+	OnDrawFloatTempBar(pDC,posYY);
 
 }
 
@@ -974,6 +1004,21 @@ void Cal_Frame_Aver(unsigned short *Image_in)
 
 }
 
+void Cal_Float_Aver(unsigned short *Image_in)
+{
+	float sumtemp=0;
+	for (int i = 0;i<Image_Width * Image_Height;i++)
+	{
+		sumtemp += *Image_in++;
+	}
+	sumtemp = sumtemp/(Image_Width * Image_Height);
+	floataver = 30 + float(sumtemp - B_aver_30)*50/(B2_aver - B_aver_30);
+	
+	//TRACE("$$$$         floataver = %f\n",floataver);
+}
+
+
+
 void Cal_Color(unsigned char *Image_in,unsigned char *Image_out)
 {
 	unsigned char *Y_space,*U_space,*V_space;
@@ -1002,7 +1047,49 @@ void Cal_Color(unsigned char *Image_in,unsigned char *Image_out)
 
 
 }
+void CDemoPlayerDlg::toMarkPotColor(CDC* pDC,unsigned short *Image_in)
+{
+	//(tmpposY -2*barTimeYY)/12 0.5
 
+	float tmpY;
+	int tmpposY=Image_Height*ZoomSize;
+	int tmpposX=Image_Width*ZoomSize;
+	float interPostemp;
+	float intertemp;
+	float nowtemp;
+	interPostemp = (tmpposY/10)/(float)(tmpposY-2*barTimeYY)*6;
+	tmpY = (float)(barYY -barTimeYY);
+	intertemp = 32-tmpY/(float)(tmpposY-2*barTimeYY)*6;
+
+	CPen pen;
+	pen.CreatePen(PS_SOLID,2,m_greencolor);
+	CPen *pOldPen;
+	pOldPen =pDC->SelectObject(&pen);
+
+	for (int i = 0; i<tmpposY;i+=2)
+	{
+		for (int j =0;j<tmpposX;j+=2)
+		{
+			nowtemp =Image_in[(((unsigned int)i)/ZoomSize*Image_Width+((unsigned int)j)/ZoomSize)];
+			nowtemp = 30 + float(nowtemp - B_aver_30)*50/(B2_aver - B_aver_30);
+
+			if ((nowtemp>(intertemp-interPostemp))&&(nowtemp<(intertemp+interPostemp)))
+			{
+				pDC->MoveTo(j,i);
+				pDC->LineTo(j,i+1);
+			}
+
+		}
+	}
+	 
+	pDC->SelectObject(pOldPen);
+	pOldPen->DeleteObject();
+	ReleaseDC(pDC);	
+
+	TRACE("$$         %f %f      $$ \n",intertemp-interPostemp,intertemp+interPostemp);
+
+	
+};
 void getMinMaxTemp(unsigned short *Image_in,int startPosX,int startPosY,int endPosX,int endPosY,bool Mode)
 {
 	int i,j;
@@ -1143,7 +1230,7 @@ UINT WINAPI CDemoPlayerDlg::udpRecvThread(PVOID pM){
 	float nowtemp;
 	float  average;
 	
-	while(1)
+	while(m_closedemo)
 	{
 
 		iRecv = recvfrom(sClient,(char *)recv_buf,sizeof(recv_buf),0,(struct sockaddr*)&saclient,&iLen);
@@ -1231,21 +1318,22 @@ UINT WINAPI CDemoPlayerDlg::udpRecvThread(PVOID pM){
 					
 					m_bufferfull = TRUE;
 
-					memset(yuvBuf1,0x80,Image_Width*Image_Height*3/2);
+					//memset(yuvBuf1,0x80,Image_Width*Image_Height*3/2);
 					
-					Bp_replace(savebuf16bit,Bp_Space,savebuf16bit);
+					//Bp_replace(savebuf16bit,Bp_Space,savebuf16bit);
 
-					if (B1_Cal == 1)
-						Calculate_B1(savebuf16bit);
+					//if (B1_Cal == 1)
+					//	Calculate_B1(savebuf16bit);
 
-					if (B2_Cal == 1)
-						Calculate_B2(savebuf16bit);
+					//if (B2_Cal == 1)
+					//	Calculate_B2(savebuf16bit);
 
-					if (B1_Cal_30 == 1)
-						Calculate_B1(savebuf16bit);
+					//if (B1_Cal_30 == 1)
+					//	Calculate_B1(savebuf16bit);
 
-					Cal_Frame_Aver(savebuf16bit);
-					twopointcal(savebuf16bit,B_Space,K_Space,B_aver,savebuf16bit);
+					//Cal_Frame_Aver(savebuf16bit);
+					Cal_Float_Aver(savebuf16bit);
+					//twopointcal(savebuf16bit,B_Space,K_Space,B_aver,savebuf16bit);
 
 					
 					if (m_HotCold && m_tocalcmaxmin)
@@ -1291,6 +1379,8 @@ UINT WINAPI CDemoPlayerDlg::udpRecvThread(PVOID pM){
 					DDE(savebuf16bit,savebuf16bit);
 					autobc(savebuf16bit,yuvBuf1);
 					Cal_Color(yuvBuf1,yuvBuf1);
+					
+
 					if(!_init_render){
 						Dlg->m_render[ch].createRender(Dlg->m_view[ch].GetSafeHwnd(), VIDEO_YV12,Image_Width, Image_Height, 1);
 
@@ -1300,7 +1390,7 @@ UINT WINAPI CDemoPlayerDlg::udpRecvThread(PVOID pM){
 					//fwrite(yuvBuf1,Image_Width*Image_Height*3/2, 1, pFile);
 					Dlg->m_render[ch].display(yuvBuf1);
 
-					
+			
 					memset(udprecvvideobuf,0,j);
 					memset(savebuf,0,Image_Width*Image_Height*ZoomSize);
 					memset(savebuf16bit,0,j);
@@ -1345,6 +1435,8 @@ UINT WINAPI CDemoPlayerDlg::udpRecvThread(PVOID pM){
 
 #endif
 	}
+
+	Dlg->m_render[ch].destroyRender();
 
 	return 0;
 }
@@ -1417,7 +1509,13 @@ void CDemoPlayerDlg::OnMouseMove(UINT nFlags, CPoint point)
 		barYY = point.y;
 
 		pDC= this->GetDC();
-		OnDrawBlock(pDC,2);
+		OnDrawBarColor(pDC);
+
+		pDC= this->GetDC();
+		OnDrawTempBar(pDC,2);
+
+		
+
 
 	}
 
@@ -1521,7 +1619,7 @@ void CDemoPlayerDlg::OnTimer(UINT_PTR nIDEvent)
 	// TODO: 在此添加消息处理程序代码和/或调用默认值
 	int tmpposX;
 	int tmpposY;
-	
+	float diffvalue;
 	tmpposX = Image_Width*ZoomSize+Tempbar_Width;
 	tmpposY = Image_Height*ZoomSize;
 
@@ -1529,18 +1627,17 @@ void CDemoPlayerDlg::OnTimer(UINT_PTR nIDEvent)
 	InvalidateRect(&CRect(tmpposX,0,tmpposX+Tempfloatbar_width,tmpposY),TRUE);
 	UpdateWindow();
 	pDC= this->GetDC();
-	OnDrawBlock2(pDC,posYY);
+	OnDrawFloatTempBar(pDC,posYY);
 	pDC= this->GetDC();
-	OnDrawBlock(pDC,2);
-
-	posYY+=10;
-
-	if (posYY>Image_Height*ZoomSize-30)
-	{
-		posYY =100;
-	}
-
+	OnDrawBarColor(pDC);
+	pDC= this->GetDC();
+	OnDrawTempBar(pDC,2);
 	
+
+	diffvalue = 32 -floataver;
+
+	posYY = diffvalue *((tmpposY -2*barTimeYY)/6)+barTimeYY;
+	//TRACE("$$$$     POSYY = %d",posYY);
 	
 	CSeries ser_temperature1 = (CSeries)m_chart_temperature.Series(0);
 	CSeries ser_temperature2 = (CSeries)m_chart_temperature.Series(1);
@@ -1693,7 +1790,7 @@ void CDemoPlayerDlg::OnTimer(UINT_PTR nIDEvent)
 			{
 					
 			}*/
-			TRACE("############   listControlCheckedNum = %d\n",listControlCheckedNum);
+			//TRACE("############   listControlCheckedNum = %d\n",listControlCheckedNum);
 
 			switch(listControlCheckedNum)
 			{
@@ -1733,6 +1830,13 @@ void CDemoPlayerDlg::OnTimer(UINT_PTR nIDEvent)
 
 		}
 
+		if (m_testflag)
+		{
+			pDC= this->GetDC();
+			toMarkPotColor(pDC,savebuf16bit);
+
+		}
+
 	CDialog::OnTimer(nIDEvent);
 }
 
@@ -1765,7 +1869,7 @@ void CDemoPlayerDlg::OnDrawHistogram(CDC* pDC)
 
 
 }
-void CDemoPlayerDlg::OnDrawBlock2(CDC* pDC,int posYY)
+void CDemoPlayerDlg::OnDrawFloatTempBar(CDC* pDC,int posYY)
 {
 
 
@@ -1799,9 +1903,9 @@ void CDemoPlayerDlg::OnDrawBlock2(CDC* pDC,int posYY)
 
 
 }
-void CDemoPlayerDlg::OnDrawBlock(CDC* pDC,int pXY)
+void CDemoPlayerDlg::OnDrawTempBar(CDC* pDC,int pXY)
 {
-	CBrush brush ,*pOldBrush;
+	CBrush brush,brushAbove,brushBelow,*pOldBrush,*pOldBrushAbove,*pOldBrushBelow;
 	int tmpposX;
 	int tmpposY;
 	int tmplineX;
@@ -1810,39 +1914,39 @@ void CDemoPlayerDlg::OnDrawBlock(CDC* pDC,int pXY)
 	tmpposX = Image_Width*ZoomSize;
 	tmpposY = Image_Height*ZoomSize;
 	tmplineX = tmpposX+Tempbar_Width/2;
-	stepY = (tmpposY -0)/12; //****************
-	brush.CreateSolidBrush(m_redcolor);
-	pOldBrush = pDC->SelectObject(&brush);
-	pDC->Rectangle(tmpposX,0,tmpposX+Tempbar_Width*2/5,tmpposY);
-	pDC->SelectObject(pOldBrush);
+	stepY = (tmpposY -2*barTimeYY)/12; //****************
+	//brush.CreateSolidBrush(m_redcolor);
+	//pOldBrush = pDC->SelectObject(&brush);
+	//pDC->Rectangle(tmpposX,0,tmpposX+Tempbar_Width*2/5,tmpposY);
+	//pDC->SelectObject(pOldBrush);
 	
-	brush.DeleteObject();
+	//brush.DeleteObject();
 	CPen NewPen(PS_SOLID,1,m_greencolor);
 	CPen *pOldPen;
 	pOldPen = pDC->SelectObject(&NewPen);
-	pDC->Rectangle(tmpposX+Tempbar_Width*3/5,0,tmpposX+Tempbar_Width,tmpposY);
+	pDC->Rectangle(tmpposX+Tempbar_Width*3/5,barTimeYY,tmpposX+Tempbar_Width,tmpposY-barTimeYY);
 	pDC->SelectObject(pOldPen);
 	NewPen.DeleteObject();
 	CPen pen2(PS_SOLID,2,m_blackcolor);
 	CPen *pOldPen2;
 	pOldPen2 =pDC->SelectObject(&pen2);
 	
-	pDC->MoveTo(tmplineX,0);
-	pDC->LineTo(tmplineX,tmpposY);
+	pDC->MoveTo(tmplineX,barTimeYY);
+	pDC->LineTo(tmplineX,tmpposY-barTimeYY);
 
 
 	for (int i =0; i<12;i++)
 	{
-		if (i %2 ==0)
+		if (i %4 ==0)
 		{
-			pDC->MoveTo(tmplineX,stepY*i);
-			pDC->LineTo(tmplineX+10,stepY*i);
-			pDC->TextOut(tmplineX+10,stepY*i-7,lcstr[i]);
+			pDC->MoveTo(tmplineX,barTimeYY+stepY*i);
+			pDC->LineTo(tmplineX+10,barTimeYY+stepY*i);
+			pDC->TextOut(tmplineX+10,barTimeYY+stepY*i-7,lcstr[i]);
 		}
 		else
 		{
-			pDC->MoveTo(tmplineX,stepY*i);
-			pDC->LineTo(tmplineX+5,stepY*i);
+			pDC->MoveTo(tmplineX,barTimeYY+stepY*i);
+			pDC->LineTo(tmplineX+5,barTimeYY+stepY*i);
 		}
 	
 	}
@@ -1853,37 +1957,104 @@ void CDemoPlayerDlg::OnDrawBlock(CDC* pDC,int pXY)
 	pOldPen2->DeleteObject();
 
 
-
-	switch(pXY)
+	if(m_IntervalChecked)
 	{
-	case 1:
-		brush.CreateSolidBrush(m_redcolor);
-		break;
-	case 2:
-		brush.CreateSolidBrush(m_greencolor);
-		break;
-	case 3:
-		brush.CreateSolidBrush(m_redcolor);
-		break;
-	default:
-		brush.CreateSolidBrush(m_redcolor);
+
+	
+		switch(pXY)
+		{
+		case 1:
+			brush.CreateSolidBrush(m_redcolor);
+			break;
+		case 2:
+			brush.CreateSolidBrush(m_greencolor);
+			break;
+		case 3:
+			brush.CreateSolidBrush(m_redcolor);
+			break;
+		default:
+			brush.CreateSolidBrush(m_redcolor);
+		}
+
+
+		pOldBrush = pDC->SelectObject(&brush);
+		if (m_AboveChecked && !m_BelowChecked)
+		{
+			if (barYY<tmpposY-2*3/10+barTimeYY)
+			{
+				barYY=tmpposY*3/10+barTimeYY;
+			}
+			else if (barYY>tmpposY*9/10-barTimeYY)
+			{
+				barYY=tmpposY*9/10-barTimeYY;
+			}
+
+		}
+		if (m_BelowChecked && !m_AboveChecked)
+		{
+			if (barYY<tmpposY/10+barTimeYY)
+			{
+				barYY=tmpposY/10+barTimeYY;
+			}
+			else if (barYY>tmpposY*7/10-barTimeYY)
+			{
+				barYY=tmpposY*7/10-barTimeYY;
+			}
+		}
+
+		if (!m_BelowChecked && !m_AboveChecked)
+		{
+			if (barYY<tmpposY/10+barTimeYY)
+			{
+				barYY=tmpposY/10+barTimeYY;
+			}
+			else if (barYY>tmpposY*9/10-barTimeYY)
+			{
+				barYY=tmpposY*9/10-barTimeYY;
+			}
+		}
+		if (m_AboveChecked && m_BelowChecked)
+		{
+			if (barYY<tmpposY*3/10+barTimeYY)
+			{
+				barYY=tmpposY*3/10+barTimeYY;
+			}
+			else if (barYY>tmpposY*7/10-barTimeYY)
+			{
+				barYY=tmpposY*7/10-barTimeYY;
+			}
+
+		}		
+
+
+		pDC->Rectangle(tmpposX,barYY-tmpposY/10,tmpposX+Tempbar_Width*2/5,barYY+tmpposY/10);
+		pDC->SelectObject(pOldBrush);
+		brush.DeleteObject();
+
+	}
+
+	if (m_AboveChecked)
+	{
+		brushAbove.CreateSolidBrush(m_redcolor);
+		pOldBrushAbove = pDC->SelectObject(&brushAbove);
+		
+		pDC->Rectangle(tmpposX,barTimeYY,tmpposX+Tempbar_Width*2/5,tmpposY/5+barTimeYY);
+		pDC->SelectObject(pOldBrushAbove);
+		brushAbove.DeleteObject();
+
 	}
 
 
-	pOldBrush = pDC->SelectObject(&brush);
-	if (barYY<tmpposY/10)
+	if (m_BelowChecked)
 	{
-		barYY=tmpposY/10;
-	}
-	else if (barYY>tmpposY*9/10)
-	{
-		barYY=tmpposY*9/10;
-	}
+		brushBelow.CreateSolidBrush(m_bluecolor2);
+		pOldBrushBelow= pDC->SelectObject(&brushBelow);
 
+		pDC->Rectangle(tmpposX,tmpposY-tmpposY/5-barTimeYY,tmpposX+Tempbar_Width*2/5,tmpposY-barTimeYY);
+		pDC->SelectObject(pOldBrushBelow);
+		brushBelow.DeleteObject();
 
-	pDC->Rectangle(tmpposX,barYY-tmpposY/10,tmpposX+Tempbar_Width*2/5,barYY+tmpposY/10);
-	pDC->SelectObject(pOldBrush);
-	brush.DeleteObject();
+	}
 
 
 	ReleaseDC(pDC);		
@@ -2240,4 +2411,130 @@ void CDemoPlayerDlg::OnNMClickListPosavr(NMHDR *pNMHDR, LRESULT *pResult)
 	m_list_ckecked = TRUE;
 	*pResult = 0;
 	
+}
+
+void CDemoPlayerDlg::OnCbnSelchangeComboColor()
+{
+	// TODO: 在此添加控件通知处理程序代码
+	CString strcolor;
+	int nSel;
+
+	nSel = m_comboColor.GetCurSel();
+	m_comboColor.GetLBText(nSel,strcolor);
+
+	toChangeColor(strcolor);
+	toChangeBarColor(strcolor);
+	TRACE("      You chose : %s\n",strcolor);
+}
+
+void CDemoPlayerDlg::toChangeColor(CString color)
+{
+	FILE * fp =NULL;
+
+	CString filename;
+	filename = "YUV-"+color+".raw";
+	fp = fopen(filename,"rb");
+
+	if (fp==NULL)
+	{
+		TRACE("## open %s file Error!!##",filename);
+	}
+	memset(tmpcolor,0,768);
+	fread((char*)tmpcolor,1,768,fp);
+
+	TRACE("      You open : %s   file\n",filename);
+	
+}
+
+void CDemoPlayerDlg::toChangeBarColor(CString color)
+{
+	FILE * fp = NULL;
+	CString filename;
+
+	if (color == "Bhot")
+	{
+		for (int j=0;j<256;j++)
+		{
+			tmprgbcolor[j]= j;
+			tmprgbcolor[256+j]=j;
+			tmprgbcolor[512+j]=j;
+		}
+		
+	}
+	else
+	{
+		filename = color+"_RGB.raw";
+		fp = fopen(filename,"rb");
+		if (fp == NULL)
+		{
+			TRACE("## open %s file Error!!##",filename);
+			
+		}
+		memset(tmprgbcolor,0,768);
+		fread(tmprgbcolor,1,768,fp);
+		TRACE("      You open : %s   file\n",filename);
+	}
+}
+void CDemoPlayerDlg::OnDrawBarColor(CDC* pDC)
+{
+	int startW= Image_Width*ZoomSize;
+	int startH = 0;
+	int endW = Image_Width*ZoomSize+ Tempbar_Width*2/5;
+	int endH = Image_Height*ZoomSize;
+
+	int R_DATA=0,G_DATA=0,B_DATA=0;
+	int index  =0;
+	R_DATA = tmprgbcolor[0];
+	G_DATA = tmprgbcolor[256];
+	B_DATA = tmprgbcolor[512];
+
+	//TRACE("________________  RGB = %d %d %d\n",R_DATA,G_DATA,B_DATA);
+
+	m_tapecolor = RGB(R_DATA,G_DATA,B_DATA);
+
+	CPen pen;
+	pen.CreatePen(PS_SOLID,0,m_tapecolor);
+	CPen *pOldPen;
+	pOldPen =pDC->SelectObject(&pen);
+	
+	for (int i =barTimeYY;i<endH-barTimeYY;i++)
+	{
+		if((i!=0)&&(i%2==0))
+		{
+			pen.DeleteObject();
+			index = i/2;
+			R_DATA = tmprgbcolor[index];
+			G_DATA = tmprgbcolor[256+index];
+			B_DATA = tmprgbcolor[512+index];
+			m_tapecolor = RGB(R_DATA,G_DATA,B_DATA);
+			//TRACE("______i %d__________  RGB = %d %d %d\n",i,R_DATA,G_DATA,B_DATA);
+
+			
+			pen.CreatePen(PS_SOLID,0,m_tapecolor);
+			pOldPen =pDC->SelectObject(&pen);
+		}
+
+		pDC->MoveTo(startW,startH+i);
+		pDC->LineTo(endW,startH+i);
+	}
+		
+		
+	pDC->SelectObject(pOldPen);
+	pOldPen->DeleteObject();
+	ReleaseDC(pDC);		
+}
+void CDemoPlayerDlg::OnBnClickedButtonTest()
+{
+	// TODO: 在此添加控件通知处理程序代码
+	
+	TRACE(" JUST FOR TEST\n");
+	m_testflag = !m_testflag;
+}
+
+void CDemoPlayerDlg::OnClose()
+{
+	// TODO: 在此添加消息处理程序代码和/或调用默认值
+	m_closedemo = FALSE;
+	Sleep(15);
+	CDialog::OnClose();
 }
